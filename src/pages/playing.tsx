@@ -62,6 +62,8 @@ export default function PlayingPage() {
   const [timeEditItemId, setTimeEditItemId] = useState("");
   const [timeStartedInput, setTimeStartedInput] = useState("");
   const [timeStoppedInput, setTimeStoppedInput] = useState("");
+  const [deletingItem, setDeletingItem] = useState<TableBill["items"][number] | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
   const [productQuantityDraft, setProductQuantityDraft] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<Record<string, string>>({});
   const [cartOpen, setCartOpen] = useState(false);
@@ -192,8 +194,8 @@ export default function PlayingPage() {
   const appliedPaymentDiscountPercent = isAdmin && paymentDiscountEnabled && paymentDiscountValid ? paymentDiscountPercentValue : 0;
   const paymentDiscountAmount = bill && appliedPaymentDiscountPercent > 0 ? Math.round(payableAmount * appliedPaymentDiscountPercent / 100) : 0;
   const paymentDueAmount = Math.max(0, payableAmount - paymentDiscountAmount);
-  const cashReceivedValue = Number(cashReceivedInput || 0);
-  const cashReceivedValid = cashReceivedInput !== "" && Number.isSafeInteger(cashReceivedValue);
+  const cashReceivedValue = cashReceivedInput === "" ? paymentDueAmount : Number(cashReceivedInput);
+  const cashReceivedValid = cashReceivedInput === "" || Number.isSafeInteger(cashReceivedValue);
   const cashCanConfirm = Boolean(canOperateBill && bill && paymentDiscountValid && cashReceivedValid && cashReceivedValue >= paymentDueAmount);
   const cashShortfall = bill ? Math.max(0, paymentDueAmount - (cashReceivedValid ? cashReceivedValue : 0)) : 0;
   const cashChange = bill ? Math.max(0, (cashReceivedValid ? cashReceivedValue : 0) - paymentDueAmount) : 0;
@@ -292,17 +294,46 @@ export default function PlayingPage() {
       return void openSnackbar({ text: invalidProduct.billingUnit === "quantity" ? "Số lượng phải là số nguyên dương" : "Trọng lượng phải lớn hơn 0", type: "warning" });
     }
     setBusy(true);
+    const initialItemIds = new Set(bill.items.map((item) => item.id));
+    const completedProductIds = new Set<string>();
+    let pendingProduct: TableBillProduct | null = null;
     try {
       for (const product of cartItems) {
+        pendingProduct = product;
         const response = await tableBillingService.addItem(bill.id, product.id, Number(cart[product.id]));
         setBill({ ...response.bill, tableName: bill.tableName });
         setQuantityDraft(draftsFor(response.bill.items));
         setCart((current) => { const next = { ...current }; delete next[product.id]; return next; });
+        completedProductIds.add(product.id);
+        pendingProduct = null;
       }
       openSnackbar({ text: canOperateBill ? "Đã thêm món vào bill" : "Đã gửi yêu cầu món, vui lòng chờ nhân viên duyệt", type: "success" });
       setCartOpen(false);
       setActiveTab("status");
     } catch (error) {
+      if (pendingProduct) {
+        try {
+          const latest = await tableBillingService.getDetail(bill.id);
+          setBill({ ...latest, tableName: bill.tableName });
+          setQuantityDraft(draftsFor(latest.items));
+          const wasSaved = latest.items.some((item) => !initialItemIds.has(item.id) && item.product === pendingProduct?.id && item.quantity === Number(cart[pendingProduct.id]));
+          if (wasSaved) {
+            const savedProduct = pendingProduct;
+            completedProductIds.add(savedProduct.id);
+            setCart((current) => { const next = { ...current }; delete next[savedProduct.id]; return next; });
+            const remainingProducts = cartItems.filter((product) => !completedProductIds.has(product.id));
+            if (!remainingProducts.length) {
+              setCartOpen(false);
+              setActiveTab("status");
+            }
+            const savedMessage = canOperateBill ? "đã được thêm vào bill" : "đã được gửi để nhân viên duyệt";
+            openSnackbar({ text: remainingProducts.length ? `${savedProduct.name} ${savedMessage}; các món còn lại vẫn trong danh sách.` : canOperateBill ? "Đã thêm món vào bill" : "Đã gửi yêu cầu món, vui lòng chờ nhân viên duyệt", type: "success" });
+            return;
+          }
+        } catch {
+          // Keep the original error when the follow-up bill refresh also fails.
+        }
+      }
       openSnackbar({ text: `${errorMessage(error)}. Những món đã lưu được giữ nguyên; hãy thử lại với món còn lại.`, type: "error" });
     } finally {
       setBusy(false);
@@ -310,7 +341,7 @@ export default function PlayingPage() {
   };
 
   const updateQuantity = async (itemId: string) => {
-    if (!bill) return;
+    if (!bill || !canEdit || busy) return;
     const quantity = Number(quantityDraft[itemId]);
     const item = bill.items.find((line) => line.id === itemId);
     if (!item || !Number.isFinite(quantity) || quantity <= 0 || (item.billingUnit === "quantity" && !Number.isInteger(quantity))) return;
@@ -329,13 +360,14 @@ export default function PlayingPage() {
   };
 
   const openTimeEditor = (item: TableBill["items"][number]) => {
+    if (!canEdit || busy) return;
     setTimeEditItemId(item.id);
     setTimeStartedInput(localDateTimeInput(item.startedAt));
     setTimeStoppedInput(localDateTimeInput(item.stoppedAt || ""));
   };
 
   const updateItemTime = async () => {
-    if (!bill || !timeEditItemId) return;
+    if (!bill || !timeEditItemId || !canEdit || busy) return;
     const startedAt = Date.parse(fromVietnamDateTimeInput(timeStartedInput));
     const stoppedAt = timeStoppedInput ? Date.parse(fromVietnamDateTimeInput(timeStoppedInput)) : NaN;
     if (!Number.isFinite(startedAt) || startedAt > Date.now() || (timeStoppedInput && (!Number.isFinite(stoppedAt) || stoppedAt <= startedAt || stoppedAt > Date.now()))) {
@@ -357,13 +389,21 @@ export default function PlayingPage() {
     }
   };
 
-  const removeItem = async (itemId: string) => {
-    if (!bill || !window.confirm("Xóa dòng hàng này khỏi hóa đơn?")) return;
+  const removeItem = async (itemId: string, reason = "") => {
+    if (!bill || !canEdit || busy) return;
+    const trimmedReason = reason.trim();
+    if ((isStaff && !trimmedReason) || trimmedReason.length > 500) {
+      openSnackbar({ text: "Vui lòng nhập lý do xóa, tối đa 500 ký tự", type: "warning" });
+      return;
+    }
     setBusy(true);
     try {
-      const response = await tableBillingService.deleteItem(bill.id, itemId);
+      const response = await tableBillingService.deleteItem(bill.id, itemId, trimmedReason);
       setBill({ ...response.bill, tableName: bill.tableName });
       setQuantityDraft(draftsFor(response.bill.items));
+      setDeletingItem(null);
+      setDeleteReason("");
+      openSnackbar({ text: "Đã xóa mặt hàng và lưu lịch sử", type: "success" });
     } catch (error) {
       openSnackbar({ text: errorMessage(error), type: "error" });
     } finally {
@@ -629,10 +669,10 @@ export default function PlayingPage() {
           <div className="mb-2 flex items-center justify-between"><Text.Title size="small" className="text-slate-900">Mặt hàng trong bill</Text.Title><button disabled={!canAddItems} onClick={() => setActiveTab("menu")} className="flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"><Icon icon="zi-plus" />{canOperateBill ? "Thêm món" : "Yêu cầu món"}</button></div>
           {bill.items.length === 0 ? <div className="border-y border-dashed border-slate-300 py-4 text-center text-sm text-slate-500">Chưa có mặt hàng</div> : <div className="divide-y divide-slate-200 border-y border-slate-200">{bill.items.map((item) => <div key={item.id} className="flex items-center gap-2 py-3">
             <div className="min-w-0 flex-1"><Text size="small" className="font-medium text-slate-900">{item.name}</Text><Text size="xSmall" className="mt-1 block text-slate-500">{item.billingUnit === "hour" ? `${quantityText(item.quantity, item.billingUnit)} giờ · Chi tiết tính tiền:` : `${money(item.unitPrice)} / ${priceUnit(item.billingUnit, item.unitLabel, item.timePricing?.intervalMinutes)}`}</Text>{item.queueStatus === "approval_pending" && <Text size="xSmall" className="mt-1 block font-medium text-amber-700">Đang chờ nhân viên duyệt</Text>}{item.queueStatus === "rejected" && <Text size="xSmall" className="mt-1 block font-medium text-rose-700">Đã từ chối · Không tính tiền</Text>}{item.billingUnit === "hour" && (item.timeBreakdown?.length ? <div className="mt-1 space-y-1">{item.timeBreakdown.map((segment) => <div key={`${segment.type}-${segment.startAt}`} className="flex items-start justify-between gap-2"><Text size="xSmall" className="min-w-0 leading-5 text-slate-600">{segment.label} · {dateTime(segment.startAt)}–{dateTime(segment.endAt)} · Dùng {formatDuration(segment.durationMinutes)}{segment.billedDurationMinutes !== segment.durationMinutes ? `, tính ${formatDuration(segment.billedDurationMinutes)}` : ""}</Text><Text size="xSmall" className="shrink-0 font-medium leading-5 text-slate-700">{money(segment.amount)}</Text></div>)}</div> : <Text size="xSmall" className="mt-1 block text-amber-700">Chưa có dữ liệu chi tiết tính giờ.</Text>)}</div>
-            {canEdit && item.billingUnit === "hour" && <button aria-label={`Sửa thời gian ${item.name}`} title="Sửa thời gian" onClick={() => openTimeEditor(item)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 text-slate-700"><FaRegClock size={15} /></button>}
-            {canEdit && item.billingUnit !== "hour" ? <input aria-label={`Số lượng ${item.name}`} type="number" min="0.01" step={item.billingUnit === "quantity" ? 1 : 0.01} inputMode="decimal" value={quantityDraft[item.id] ?? String(item.quantity)} onChange={(event) => setQuantityDraft((current) => ({ ...current, [item.id]: event.target.value }))} onBlur={() => updateQuantity(item.id)} className="w-20 rounded-md border border-slate-300 px-2 py-2 text-right text-sm" /> : item.billingUnit !== "hour" ? <span className="text-sm text-slate-600">× {quantityText(item.quantity, item.billingUnit)} {item.unitLabel}</span> : null}
+            {canEdit && item.billingUnit === "hour" && <button disabled={busy} aria-label={`Sửa thời gian ${item.name}`} title="Sửa thời gian" onClick={() => openTimeEditor(item)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 text-slate-700 disabled:opacity-50"><FaRegClock size={15} /></button>}
+            {canEdit && item.billingUnit !== "hour" ? <input disabled={busy} aria-label={`Số lượng ${item.name}`} type="number" min="0.01" step={item.billingUnit === "quantity" ? 1 : 0.01} inputMode="decimal" value={quantityDraft[item.id] ?? String(item.quantity)} onChange={(event) => setQuantityDraft((current) => ({ ...current, [item.id]: event.target.value }))} onBlur={() => updateQuantity(item.id)} className="w-20 rounded-md border border-slate-300 px-2 py-2 text-right text-sm disabled:opacity-50" /> : item.billingUnit !== "hour" ? <span className="text-sm text-slate-600">× {quantityText(item.quantity, item.billingUnit)} {item.unitLabel}</span> : null}
             <Text size="small" className="w-24 text-right font-semibold text-slate-900">{money(item.lineTotal)}</Text>
-            {canEdit && <button aria-label={`Xóa ${item.name}`} title="Xóa dòng hàng" onClick={() => removeItem(item.id)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-rose-700 hover:bg-rose-50"><Icon icon="zi-delete" /></button>}
+            {canEdit && <button disabled={busy} aria-label={`Xóa ${item.name}`} title="Xóa dòng hàng" onClick={() => { if (isStaff) { setDeleteReason(""); setDeletingItem(item); } else void removeItem(item.id); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Icon icon="zi-delete" /></button>}
           </div>)}</div>}
         </section>
 
@@ -656,6 +696,14 @@ export default function PlayingPage() {
         <div className="flex items-center justify-between"><div><Text.Title size="small">Áp dụng khuyến mại</Text.Title><Text size="xSmall" className="mt-1 text-slate-500">{bill.tableName} · {money(bill.totalAmount)}</Text></div><button aria-label="Đóng khuyến mại" onClick={() => setPromotionSheetOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon icon="zi-close" /></button></div>
         <button disabled={busy} onClick={() => void choosePromotion()} className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50">Bỏ chọn thủ công, tính lại tự động</button>
         {promotionsLoading ? <div className="flex justify-center py-6"><Spinner /></div> : promotions.length ? <div className="divide-y divide-slate-200 border-y border-slate-200">{promotions.map((item) => <button key={item.id} disabled={busy} onClick={() => void choosePromotion(item.id)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left disabled:opacity-50"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-800"><Icon icon="zi-ticket" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{item.name}</span><span className="mt-1 block text-xs text-slate-500">{promotionValue(item)} · Tối thiểu {money(item.minInvoiceAmount)}</span></span><Icon icon="zi-chevron-right" className="shrink-0 text-slate-400" /></button>)}</div> : <div className="border-y border-dashed border-slate-300 py-6 text-center text-sm text-slate-500">Chưa có chương trình áp dụng thủ công đang hoạt động.</div>}
+      </Box>
+    </Sheet>
+    <Sheet visible={Boolean(deletingItem) && isStaff} onClose={() => !busy && setDeletingItem(null)} autoHeight swipeToClose={!busy} unmountOnClose>
+      <Box className="max-h-[85dvh] space-y-4 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] pt-4">
+        <div className="flex items-center justify-between gap-3"><Text.Title size="small">Xóa mặt hàng</Text.Title><button disabled={busy} aria-label="Đóng xóa mặt hàng" onClick={() => setDeletingItem(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"><Icon icon="zi-close" /></button></div>
+        <Text size="small" className="break-words text-slate-700">Xóa {deletingItem?.name} khỏi bill {bill.tableName}. Thao tác và lý do sẽ được lưu vào lịch sử.</Text>
+        <label htmlFor="delete-item-reason" className="block text-sm font-medium text-slate-700">Lý do xóa <span className="text-rose-700">(bắt buộc)</span><textarea id="delete-item-reason" required maxLength={500} rows={3} disabled={busy} value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="Nhập lý do xóa mặt hàng" className="mt-2 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 disabled:opacity-50" /></label>
+        <div className="grid grid-cols-2 gap-3"><button disabled={busy} onClick={() => setDeletingItem(null)} className="min-h-12 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50">Hủy</button><button disabled={busy || !canEdit || !deleteReason.trim()} onClick={() => deletingItem && void removeItem(deletingItem.id, deleteReason)} className="min-h-12 rounded-lg bg-rose-700 px-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Đang xóa..." : "Xác nhận xóa"}</button></div>
       </Box>
     </Sheet>
     <Sheet visible={Boolean(timeEditItemId)} onClose={() => !busy && setTimeEditItemId("")} autoHeight swipeToClose unmountOnClose>
@@ -690,7 +738,7 @@ export default function PlayingPage() {
           {isWalletPending && paymentMode !== "cash" ? <div className="flex items-center justify-between text-sm"><span className="text-slate-600">Khách cần trả</span><span className="font-semibold text-slate-900">{money(paymentDueAmount)}</span></div> : paymentMode === "qr" ? paymentSettingsLoading ? <div className="flex justify-center py-6"><Spinner /></div> : paymentSettingsError ? <div role="alert" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900">Không thể tải tài khoản nhận QR: {paymentSettingsError}</div> : qrReady ? <div className="space-y-3 text-center"><img src={qrUrl} alt="Mã QR thanh toán cho bill bàn" className="mx-auto aspect-square w-52 max-w-full rounded-lg border border-slate-200 bg-white object-contain" /><Text size="small" className="font-semibold text-slate-900">{paymentSettings.accountName}</Text><Text size="xSmall" className="text-slate-600">{paymentSettings.bankId} · {paymentSettings.accountNumber}</Text><Text size="small" className="font-semibold text-rose-700">{money(isAdmin ? paymentDueAmount : payableAmount)}</Text><Text size="xSmall" className="text-slate-500">Nội dung: Bill {bill.tableName} {bill.id}</Text>{!isAdmin && <Text size="xSmall" className="text-slate-500">Yêu cầu sẽ được gửi tới admin để kiểm tra và xác nhận.</Text>}</div> : <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Chưa cấu hình tài khoản nhận QR. Admin hãy nhập thông tin trong mục Tài khoản.</div> : paymentMode === "wallet" ? <div className="space-y-3"><Text size="small" className="text-slate-600">Số tiền sẽ được trừ từ ví của bạn khi admin duyệt yêu cầu.</Text>{isAdmin && bill.customer && <Text size="small" className="text-slate-600">Bill đang gắn với tài khoản khách; yêu cầu mới vẫn dùng ví của người gửi.</Text>}</div> : <div className="space-y-4">
             <div className="flex items-center justify-between"><Text size="small" className="text-slate-600">Khách cần trả</Text><Text size="small" className="font-semibold text-slate-900">{money(isAdmin ? paymentDueAmount : bill.totalAmount)}</Text></div>
             {canOperateBill ? <>
-              <label htmlFor="cash-received" className="block text-sm font-medium text-slate-700">Tiền khách đưa<input id="cash-received" type="text" inputMode="numeric" value={formatMoneyInput(cashReceivedInput)} onChange={(event) => handleMoneyInput(event, setCashReceivedInput)} placeholder="Nhập số tiền" className="mt-1 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-right text-lg font-semibold text-slate-900 placeholder:text-base placeholder:font-normal" /></label>
+              <label htmlFor="cash-received" className="block text-sm font-medium text-slate-700">Tiền khách đưa (không bắt buộc)<input id="cash-received" type="text" inputMode="numeric" value={formatMoneyInput(cashReceivedInput)} onChange={(event) => handleMoneyInput(event, setCashReceivedInput)} placeholder="Để trống nếu khách đưa vừa đủ" className="mt-1 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-right text-lg font-semibold text-slate-900 placeholder:text-base placeholder:font-normal" /></label>
               <div className="grid grid-cols-3 gap-2">{cashDenominations.map((amount) => <button key={amount} type="button" onClick={() => setCashReceivedInput(String((Number(cashReceivedInput) || 0) + amount))} className="min-h-11 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-sm font-semibold text-emerald-800 active:bg-emerald-100">+{money(amount)}</button>)}</div>
               <div aria-live="polite" className={`rounded-lg border p-3 ${cashShortfall ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>{!cashReceivedValid ? <Text size="small" className="text-slate-700">Nhập số tiền khách đưa</Text> : cashShortfall ? <div className="flex items-center justify-between gap-2 text-sm"><span className="text-amber-900">Còn thiếu</span><span className="font-semibold text-amber-900">{money(cashShortfall)}</span></div> : <div className="flex items-center justify-between gap-2 text-sm"><span className="text-emerald-900">Tiền thối</span><span className="font-semibold text-emerald-900">{money(cashChange)}</span></div>}</div>
             </> : <Text size="small" className="text-slate-600">Vui lòng trả tiền mặt cho nhân viên tại quầy.</Text>}

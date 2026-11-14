@@ -25,6 +25,7 @@ import AdminInventorySettingsPage from "@/pages/admin-inventory-settings";
 import AdminSettingsPage from "@/pages/admin-settings";
 import StaffQueuePage from "@/pages/staff-queue";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { StaffQueueProvider } from "@/contexts/StaffQueueContext";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -112,7 +113,9 @@ const Layout = () => {
     <BrowserRouter>
       <SnackbarProvider>
         <AuthProvider>
-          <AppRoutes />
+          <StaffQueueProvider>
+            <AppRoutes />
+          </StaffQueueProvider>
         </AuthProvider>
       </SnackbarProvider>
     </BrowserRouter>

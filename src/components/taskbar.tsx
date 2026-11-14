@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "zmp-ui";
 import { useAuth } from "@/contexts/AuthContext";
+import { useStaffQueue } from "@/contexts/StaffQueueContext";
 import {
   RiDashboardFill,
   RiDashboardLine,
@@ -60,6 +61,7 @@ const TabBar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { historyUnread } = useStaffQueue();
   const queueTab = {
     path: "/staff/queue",
     label: "Hàng chờ",
@@ -123,11 +125,12 @@ const TabBar = () => {
           />
           {tabs.map((tab, index) => {
             const active = index === activeIndex;
+            const unread = tab.path === "/staff/queue" && historyUnread;
             return (
               <button
                 key={tab.path}
                 type="button"
-                aria-label={tab.label}
+                aria-label={unread ? `${tab.label}, lịch sử có cập nhật mới` : tab.label}
                 aria-current={active ? "page" : undefined}
                 title={tab.label}
                 onClick={() => handleNavigate(tab.path, index)}
@@ -138,9 +141,10 @@ const TabBar = () => {
                     active
                       ? "text-white dark:text-white"
                       : "text-slate-500 dark:text-slate-400"
-                  } flex items-center justify-center transition-all w-10 h-10 duration-300`}
+                  } relative flex items-center justify-center transition-all w-10 h-10 duration-300`}
                 >
                   {active && tab.activeIcon ? tab.activeIcon : tab.icon}
+                  {unread && <span aria-hidden="true" className="absolute right-0 top-0 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
                 </div>
                 {tab.path === "/staff/queue" && <span className={`text-[10px] font-semibold leading-none ${active ? "text-white" : "text-slate-500"}`}>Hàng chờ</span>}
               </button>

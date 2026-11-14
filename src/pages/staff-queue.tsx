@@ -3,10 +3,10 @@ import { Box, Icon, Page, Sheet, Spinner, Text, useSnackbar } from "zmp-ui";
 import { Navigate, useNavigate } from "react-router-dom";
 
 import { tableBillingService } from "@/api/services";
-import pb from "@/api/pocketbase";
 import type { StaffQueueItem } from "@/api/pocketbase";
 import StoreHeader from "@/components/store-header";
 import { useAuth } from "@/contexts/AuthContext";
+import { useStaffQueue } from "@/contexts/StaffQueueContext";
 import { formatVietnamDateTime } from "@/utils/format";
 
 const messageOf = (error: any) => error?.response?.data?.error || error?.response?.message || error?.message || "Không thể cập nhật hàng chờ";
@@ -14,6 +14,7 @@ const dateTime = (value: string) => value ? formatVietnamDateTime(value) : "";
 
 export default function StaffQueuePage() {
   const { user } = useAuth();
+  const { revision, historyUnread, markHistoryRead } = useStaffQueue();
   const navigate = useNavigate();
   const { openSnackbar } = useSnackbar();
   const [view, setView] = useState<"requests" | "queue" | "history">("queue");
@@ -38,18 +39,7 @@ export default function StaffQueuePage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (canUse) void load(); }, [canUse, view]);
-  useEffect(() => {
-    if (!canUse) return;
-    let active = true;
-    pb.collection("staff_queue_signals").subscribe("*", () => {
-      if (active) void load();
-    }).catch((error) => console.warn("Không thể kết nối cập nhật hàng chờ realtime:", error));
-    return () => {
-      active = false;
-      void pb.collection("staff_queue_signals").unsubscribe("*");
-    };
-  }, [canUse, view]);
+  useEffect(() => { if (canUse) void load(); }, [canUse, view, revision, user?.id, user?.store]);
 
   if (!canUse) return <Navigate to="/" replace />;
 
@@ -93,8 +83,8 @@ export default function StaffQueuePage() {
         <Text.Title size="small" className="min-w-0 flex-1 text-slate-900">Hàng chờ</Text.Title>
       </header>
       <div role="tablist" aria-label="Danh sách món" className="grid grid-cols-3 rounded-lg border border-slate-200 bg-white p-1">
-        {([["queue", "Chế biến"], ["requests", "Yêu cầu món"], ["history", "Lịch sử"]] as const).map(([key, label]) => <button key={key} role="tab" aria-label={key === "requests" && requestCount > 0 ? `${label}, ${requestCount} đơn chờ` : label} aria-selected={view === key} onClick={() => setView(key)} className={`relative min-h-11 rounded-md px-2 text-xs font-semibold ${view === key ? "bg-emerald-700 text-white" : "text-slate-600"}`}>
-          {label}{key === "requests" && requestCount > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
+        {([["queue", "Chế biến"], ["requests", "Yêu cầu món"], ["history", "Lịch sử"]] as const).map(([key, label]) => <button key={key} role="tab" aria-label={key === "requests" && requestCount > 0 ? `${label}, ${requestCount} đơn chờ` : key === "history" && historyUnread ? `${label}, có cập nhật mới` : label} aria-selected={view === key} onClick={() => { setView(key); if (key === "history") markHistoryRead(); }} className={`relative min-h-11 rounded-md px-2 text-xs font-semibold ${view === key ? "bg-emerald-700 text-white" : "text-slate-600"}`}>
+          {label}{key === "requests" && requestCount > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}{key === "history" && historyUnread && <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
         </button>)}
       </div>
       {loading ? <div className="flex justify-center py-12"><Spinner /></div> : items.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center text-sm text-slate-500">{view === "requests" ? "Chưa có yêu cầu món." : view === "history" ? "Chưa có lịch sử thao tác." : "Hiện chưa có món đang chờ."}</div> : <div className="space-y-3">

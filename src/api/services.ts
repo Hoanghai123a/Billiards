@@ -243,8 +243,8 @@ export const tableBillingService = {
   async updateItemTime(billId: string, itemId: string, startedAt: string, stoppedAt: string) {
     return pb.send<{ ok: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'update_item_time', billId, itemId, startedAt, stoppedAt } });
   },
-  async deleteItem(billId: string, itemId: string) {
-    return pb.send<{ ok: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'delete_item', billId, itemId } });
+  async deleteItem(billId: string, itemId: string, reason = '') {
+    return pb.send<{ ok: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'delete_item', billId, itemId, reason } });
   },
   async applyPromotion(billId: string, promotionId = '') {
     return pb.send<{ ok: boolean; bill: TableBill; discountAmount?: number; cleared?: boolean }>('/api/table-billing/action', { method: 'POST', body: { action: 'apply_promotion', billId, promotionId } });

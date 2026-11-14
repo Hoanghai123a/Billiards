@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { adminNotificationService, billPaymentService, walletService } from "@/api/services";
 import type { AdminNotification, BillPaymentSettings, WalletSummary } from "@/api/pocketbase";
 
-type VietQrBank = { code: string; bin: string; shortName: string; isTransfer: number };
+type VietQrBank = { code: string; bin: string; name: string; shortName: string; isTransfer: number };
 
 const PAGE_CLASS =
   "flex flex-col bg-white pb-[calc(env(safe-area-inset-bottom,0px)+96px)] dark:bg-black";
@@ -82,8 +82,8 @@ function AccountPage() {
       return response.json() as Promise<{ data?: VietQrBank[] }>;
     }).then(({ data }) => {
       const supportedBanks = (Array.isArray(data) ? data : [])
-        .filter((bank) => bank.isTransfer === 1 && /^\d{6}$/.test(bank.bin) && /ngân hàng|tmcp|\bbank\b/i.test(bank.name.normalize("NFC")))
-        .sort((a, b) => a.shortName.localeCompare(b.shortName, "vi"));
+        .filter((bank) => bank.isTransfer === 1 && /^\d{6}$/.test(String(bank.bin ?? "")) && /ngân hàng|tmcp|\bbank\b/i.test(String(bank.name ?? "").normalize("NFC")))
+        .sort((a, b) => String(a.shortName ?? "").localeCompare(String(b.shortName ?? ""), "vi"));
       if (!supportedBanks.length) throw new Error("Danh sách ngân hàng VietQR trống");
       if (active) setBanks(supportedBanks);
     }).catch(() => {
@@ -94,7 +94,8 @@ function AccountPage() {
     return () => { active = false; };
   }, [isAuthenticated, user?.role]);
 
-  const selectedBank = banks.find((bank) => bank.bin === paymentSettings.bankId || bank.code.toLowerCase() === paymentSettings.bankId.toLowerCase());
+  const paymentBankId = String(paymentSettings.bankId ?? "");
+  const selectedBank = banks.find((bank) => paymentBankId && (bank.bin === paymentBankId || String(bank.code ?? "").toLowerCase() === paymentBankId.toLowerCase()));
   const hasPaymentDetails = !!(paymentSettings.bankId || paymentSettings.accountNumber || paymentSettings.accountName);
 
   const savePaymentSettings = async () => {

@@ -160,6 +160,18 @@ textarea::placeholder {
   cursor: pointer;
 }
 
+/* Keep transient notifications in the upper area, clear of bottom controls. */
+.zaui-snackbar-top,
+.zaui-snackbar-bottom {
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  bottom: auto;
+}
+
+.zaui-snackbar-enter-bottom,
+.zaui-snackbar-exit-active-bottom {
+  transform: translate(-50%, -12px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
