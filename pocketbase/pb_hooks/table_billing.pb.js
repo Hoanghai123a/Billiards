@@ -3887,26 +3887,30 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
         txApp.save(table);
       }
       recordInventorySales(txApp, bill);
-      recordEvent(txApp, {
-        store,
-        billId: bill.id,
-        tableName: displayTableName(txApp, bill.get("table")),
-        category: "payment",
-        eventType: "payment_completed",
-        title: "Đã thanh toán hóa đơn",
-        actor: auth,
-        paymentMethod,
-        amount: total,
-        details: {
-          grossAmount: grossTotal,
-          discountAmount,
-          promotion: applied.result ? applied.result.snapshot : null,
-          paymentDiscountPercent: discountPercent,
-          paymentDiscountAmount,
-          amountBeforePaymentDiscount,
-          ...(discountNote ? { paymentDiscountNote: discountNote } : {}),
-        },
-      });
+      try {
+        recordEvent(txApp, {
+          store,
+          billId: bill.id,
+          tableName: displayTableName(txApp, bill.get("table")),
+          category: "payment",
+          eventType: "payment_completed",
+          title: "Đã thanh toán hóa đơn",
+          actor: auth,
+          paymentMethod,
+          amount: total,
+          details: {
+            grossAmount: grossTotal,
+            discountAmount,
+            promotion: applied.result ? applied.result.snapshot : null,
+            paymentDiscountPercent: discountPercent,
+            paymentDiscountAmount,
+            amountBeforePaymentDiscount,
+            ...(discountNote ? { paymentDiscountNote: discountNote } : {}),
+          },
+        });
+      } catch (error) {
+        console.error("Failed to record payment event:", error);
+      }
       billId = bill.id;
     });
     return c.json(200, {
