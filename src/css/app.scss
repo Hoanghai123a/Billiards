@@ -135,6 +135,11 @@ textarea::placeholder {
   padding: 16px 16px 96px 16px;
 }
 
+/* The floating tab bar must not cover the last actionable row on short screens. */
+.has-bottom-tabbar .zaui-page {
+  padding-bottom: max(104px, calc(env(safe-area-inset-bottom, 0px) + 88px)) !important;
+}
+
 .bill-page {
   height: calc(100vh - env(safe-area-inset-bottom, 0px) - 88px);
 }

@@ -43,6 +43,11 @@ onRecordAfterDeleteSuccess((e) => {
   return e.next();
 }, "table_bill_items");
 
+const roundPaymentAmount = (value) => {
+  const amount = Math.max(0, Math.round(Number(value) || 0));
+  return amount >= 1000 ? Math.floor(amount / 1000) * 1000 : amount;
+};
+
 routerAdd("GET", "/api/admin/notifications", (c) => {
   const info = c.requestInfo();
   const auth = info.auth || c.auth;
@@ -3676,6 +3681,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
         const applied = recalculatePromotion(txApp, txBill, now, grossTotal);
         total = applied.result ? applied.result.total : grossTotal;
       }
+      total = roundPaymentAmount(total);
       txBill.set("requested_amount", total);
       txBill.set("wallet_requested_at", new Date(now).toISOString());
       txBill.set("payment_requester", auth.id);
@@ -3858,10 +3864,10 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
       paymentDiscountAmount = Math.round(
         (amountBeforePaymentDiscount * discountPercent) / 100,
       );
-      const total = Math.max(
+      const total = roundPaymentAmount(Math.max(
         0,
         amountBeforePaymentDiscount - paymentDiscountAmount,
-      );
+      ));
       grossAmount = grossTotal;
       if (paymentMethod === "cash" && cashReceived < total)
         throw new BadRequestError("Tiền khách đưa chưa đủ thanh toán hóa đơn");
@@ -3999,10 +4005,10 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
       paymentDiscountAmount = Math.round(
         (amountBeforePaymentDiscount * discountPercent) / 100,
       );
-      const total = Math.max(
+      const total = roundPaymentAmount(Math.max(
         0,
         amountBeforePaymentDiscount - paymentDiscountAmount,
-      );
+      ));
       const promoUsed = Math.min(total, promoAvailable);
       const mainBefore = Number(wallet.get("main_balance")) || 0;
       const mainUsed = total - promoUsed;

@@ -1,4 +1,8 @@
 import pb, { Store, User, Product, ProductInput, ProductCategory, Table, TableLayout, TableMap, TableBill, TableBillSessionSummary, TableBillCustomer, TableBillProduct, TableBillHistoryEvent, TableBillingReport, TableBillProductHistoryItem, AdminDashboardReport, InventoryItem, InventoryMovement, InventorySettings, Customer, WalletOrder, WalletSummary, WalletTransactionPage, WalletUser, WalletTopup, WalletTopupCreateResult, WalletTopupPayment, WalletPromoSettings, XuAdminUser, XuCheckinResult, XuRedemption, XuReferralSummary, XuReward, XuSettings, XuSummary, XuTransactionPage, BillPaymentSettings, AdminNotification, Promotion, CustomerSegmentData, StaffAccount, StaffAttendance, StaffQueueItem, AuditLog } from './pocketbase';
+import { clearSessionCachePrefix, readSessionCache, removeSessionCache, writeSessionCache } from '@/utils/session-cache';
+
+const currentStoreId = () => String((pb.authStore.model as { store?: string } | null)?.store || '');
+const cacheKey = (prefix: string, storeId = currentStoreId()) => `${prefix}:${storeId}:v1`;
 
 export const registrationAdminService = {
   get() {
@@ -95,15 +99,15 @@ export const billPaymentService = {
   },
   getCachedSettings(storeId = String((pb.authStore.model as { store?: string } | null)?.store || "")) {
     if (!storeId) return null;
-    try {
-      return JSON.parse(localStorage.getItem(`billiard:payment-settings:${storeId}:v1`) || "null") as BillPaymentSettings | null;
-    } catch {
-      return null;
-    }
+    try { localStorage.removeItem(`billiard:payment-settings:${storeId}:v1`); } catch { /* Remove legacy persistent cache when possible. */ }
+    return readSessionCache<BillPaymentSettings>(cacheKey('billiard:payment-settings', storeId), 30 * 60 * 1000);
   },
   cacheSettings(storeId: string, settings: BillPaymentSettings) {
     if (!storeId) return;
-    try { localStorage.setItem(`billiard:payment-settings:${storeId}:v1`, JSON.stringify(settings)); } catch { /* Cache is optional. */ }
+    writeSessionCache(cacheKey('billiard:payment-settings', storeId), settings);
+  },
+  clearCachedSettings(storeId = currentStoreId()) {
+    if (storeId) removeSessionCache(cacheKey('billiard:payment-settings', storeId));
   },
   saveSettings(settings: BillPaymentSettings) {
     const storeId = String((pb.authStore.model as { store?: string } | null)?.store || "");
@@ -130,51 +134,99 @@ export const billPaymentService = {
 
 export const productService = {
   async listAdmin(storeId: string) {
-    return await pb.collection('products').getFullList<Product>({
+    const key = cacheKey('billiard:admin-products', storeId);
+    const cached = readSessionCache<Product[]>(key, 5 * 60 * 1000);
+    if (cached) return cached;
+    const products = await pb.collection('products').getFullList<Product>({
       filter: `store="${storeId}"`,
       sort: 'category,name',
     });
+    writeSessionCache(key, products);
+    return products;
   },
 
   async create(data: ProductInput) {
-    return await pb.collection('products').create<Product>(data);
+    const result = await pb.collection('products').create<Product>(data);
+    clearSessionCachePrefix('billiard:admin-products:');
+    clearSessionCachePrefix('billiard:products:');
+    return result;
   },
 
   async update(id: string, data: ProductInput) {
-    return await pb.collection('products').update<Product>(id, data);
+    const result = await pb.collection('products').update<Product>(id, data);
+    clearSessionCachePrefix('billiard:admin-products:');
+    clearSessionCachePrefix('billiard:products:');
+    return result;
   },
 
   async delete(id: string) {
-    return await pb.collection('products').delete(id);
+    const result = await pb.collection('products').delete(id);
+    clearSessionCachePrefix('billiard:admin-products:');
+    clearSessionCachePrefix('billiard:products:');
+    return result;
   }
 };
 
 export const productCategoryService = {
   async list(storeId: string) {
-    return await pb.collection('product_categories').getFullList<ProductCategory>({
+    const key = cacheKey('billiard:product-categories', storeId);
+    const cached = readSessionCache<ProductCategory[]>(key, 5 * 60 * 1000);
+    if (cached) return cached;
+    const categories = await pb.collection('product_categories').getFullList<ProductCategory>({
       filter: `store="${storeId}"`,
       sort: 'name',
     });
+    writeSessionCache(key, categories);
+    return categories;
   },
 
   async create(data: Pick<ProductCategory, 'store' | 'name'>) {
-    return await pb.collection('product_categories').create<ProductCategory>(data);
+    const result = await pb.collection('product_categories').create<ProductCategory>(data);
+    clearSessionCachePrefix('billiard:product-categories:');
+    return result;
   },
 
   async update(id: string, name: string) {
-    return await pb.collection('product_categories').update<ProductCategory>(id, { name });
+    const result = await pb.collection('product_categories').update<ProductCategory>(id, { name });
+    clearSessionCachePrefix('billiard:product-categories:');
+    clearSessionCachePrefix('billiard:admin-products:');
+    clearSessionCachePrefix('billiard:products:');
+    return result;
   },
 
   async delete(id: string) {
-    return await pb.collection('product_categories').delete(id);
+    const result = await pb.collection('product_categories').delete(id);
+    clearSessionCachePrefix('billiard:product-categories:');
+    clearSessionCachePrefix('billiard:admin-products:');
+    clearSessionCachePrefix('billiard:products:');
+    return result;
   },
 };
 
 export const promotionService = {
-  async list() { return pb.send<{ items: Promotion[] }>('/api/admin/promotions', { method: 'GET' }); },
-  async create(input: Partial<Promotion>) { return pb.send<Promotion>('/api/admin/promotions', { method: 'POST', body: input }); },
-  async update(id: string, input: Partial<Promotion>) { return pb.send<Promotion>('/api/admin/promotions', { method: 'POST', body: { ...input, id } }); },
-  async remove(id: string) { return pb.send<{ ok: boolean }>('/api/admin/promotions', { method: 'DELETE', body: { id } }); },
+  async list() {
+    const key = cacheKey('billiard:promotions');
+    const cached = readSessionCache<{ items: Promotion[] }>(key, 60 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<{ items: Promotion[] }>('/api/admin/promotions', { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
+  },
+  async create(input: Partial<Promotion>) {
+    const result = await pb.send<Promotion>('/api/admin/promotions', { method: 'POST', body: input });
+    clearSessionCachePrefix('billiard:promotions:');
+    return result;
+  },
+  async update(id: string, input: Partial<Promotion>) {
+    const result = await pb.send<Promotion>('/api/admin/promotions', { method: 'POST', body: { ...input, id } });
+    clearSessionCachePrefix('billiard:promotions:');
+    return result;
+  },
+  async remove(id: string) {
+    const result = await pb.send<{ ok: boolean }>('/api/admin/promotions', { method: 'DELETE', body: { id } });
+    clearSessionCachePrefix('billiard:promotions:');
+    return result;
+  },
 };
 
 export const customerSegmentService = {
@@ -287,10 +339,20 @@ export const tableBillingService = {
     return pb.send<TableBillSessionSummary>('/api/table-billing/action', { method: 'POST', body: { action: 'session_summary', billId } });
   },
   async getProducts() {
-    return pb.send<{ items: TableBillProduct[] }>('/api/table-billing/products', { method: 'GET' });
+    const key = cacheKey('billiard:products');
+    const cached = readSessionCache<{ items: TableBillProduct[] }>(key, 5 * 60 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<{ items: TableBillProduct[] }>('/api/table-billing/products', { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
   },
   async getCustomers() {
-    return pb.send<{ items: TableBillCustomer[] }>('/api/table-billing/customers', { method: 'GET' });
+    const key = cacheKey('billiard:customers');
+    const cached = readSessionCache<{ items: TableBillCustomer[] }>(key, 5 * 60 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<{ items: TableBillCustomer[] }>('/api/table-billing/customers', { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
   },
   async addItem(billId: string, productId: string, quantity: number) {
     return pb.send<{ ok: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'add_item', billId, productId, quantity } });
@@ -374,27 +436,48 @@ export const tableBillHistoryService = {
 };
 
 export const reportSettingsService = {
-  get() {
-    return pb.send<{ shiftType: 2 | 3; shifts: { name: string; start: string; end: string }[] }>(`/api/admin/table-billing/report-settings`, { method: 'GET' });
+  async get() {
+    const key = cacheKey('billiard:report-settings');
+    const cached = readSessionCache<{ shiftType: 2 | 3; shifts: { name: string; start: string; end: string }[] }>(key, 30 * 60 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<{ shiftType: 2 | 3; shifts: { name: string; start: string; end: string }[] }>(`/api/admin/table-billing/report-settings`, { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
   },
-  save(shiftType: 2 | 3, shifts: { name: string; start: string; end: string }[]) {
-    return pb.send<{ shiftType: 2 | 3; shifts: { name: string; start: string; end: string }[] }>(`/api/admin/table-billing/report-settings`, { method: 'PATCH', body: { shiftType, shifts } });
+  async save(shiftType: 2 | 3, shifts: { name: string; start: string; end: string }[]) {
+    const result = await pb.send<{ shiftType: 2 | 3; shifts: { name: string; start: string; end: string }[] }>(`/api/admin/table-billing/report-settings`, { method: 'PATCH', body: { shiftType, shifts } });
+    writeSessionCache(cacheKey('billiard:report-settings'), result);
+    return result;
   },
 };
 
 export const inventoryService = {
-  getSettings() {
-    return pb.send<InventorySettings>('/api/admin/inventory/settings', { method: 'GET' });
+  async getSettings() {
+    const key = cacheKey('billiard:inventory-settings');
+    const cached = readSessionCache<InventorySettings>(key, 30 * 60 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<InventorySettings>('/api/admin/inventory/settings', { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
   },
-  saveSettings(inventoryRequired: boolean) {
-    return pb.send<InventorySettings>('/api/admin/inventory/settings', { method: 'PATCH', body: { inventoryRequired } });
+  async saveSettings(inventoryRequired: boolean) {
+    const result = await pb.send<InventorySettings>('/api/admin/inventory/settings', { method: 'PATCH', body: { inventoryRequired } });
+    writeSessionCache(cacheKey('billiard:inventory-settings'), result);
+    return result;
   },
   async list(search = '') {
     const query = search ? `?search=${encodeURIComponent(search)}` : '';
-    return pb.send<{ items: InventoryItem[]; movements: InventoryMovement[] }>(`/api/admin/inventory${query}`, { method: 'GET' });
+    const key = `${cacheKey('billiard:inventory', currentStoreId())}:${search.trim().toLocaleLowerCase('vi')}`;
+    const cached = readSessionCache<{ items: InventoryItem[]; movements: InventoryMovement[] }>(key, 30 * 1000);
+    if (cached) return cached;
+    const result = await pb.send<{ items: InventoryItem[]; movements: InventoryMovement[] }>(`/api/admin/inventory${query}`, { method: 'GET' });
+    writeSessionCache(key, result);
+    return result;
   },
   async move(input: { productId: string; movementType: 'in' | 'adjustment'; quantity: number; unitCost: number; note: string }) {
-    return pb.send<{ ok: boolean; onHand: number; reserved: number; available: number }>('/api/admin/inventory/movement', { method: 'POST', body: input });
+    const result = await pb.send<{ ok: boolean; onHand: number; reserved: number; available: number }>('/api/admin/inventory/movement', { method: 'POST', body: input });
+    clearSessionCachePrefix('billiard:inventory:');
+    return result;
   },
 };
 

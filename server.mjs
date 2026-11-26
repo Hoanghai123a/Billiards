@@ -80,7 +80,13 @@ function serveStatic(request, response) {
     sendJson(response, 503, { message: "Frontend chưa được build" });
     return;
   }
-  const headers = { "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream" };
+  const relativePath = relative(distDir, filePath).replaceAll("\\", "/");
+  const headers = {
+    "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream",
+    "Cache-Control": relativePath.startsWith("assets/")
+      ? "public, max-age=31536000, immutable"
+      : relativePath === "index.html" ? "no-cache" : "public, max-age=3600",
+  };
   response.writeHead(200, headers);
   if (request.method === "HEAD") response.end();
   else createReadStream(filePath).pipe(response);

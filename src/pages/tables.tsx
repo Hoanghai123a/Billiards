@@ -6,6 +6,7 @@ import { IoQrCodeOutline } from "react-icons/io5";
 import { adminNotificationService, tableService, tableBillingService } from "@/api/services";
 import pb, { type Table, type TableBillCustomer, type TableCanvasPosition, type TableMap } from "@/api/pocketbase";
 import { useAuth } from "@/contexts/AuthContext";
+import { readSessionCache, writeSessionCache } from "@/utils/session-cache";
 import { useStaffQueue } from "@/contexts/StaffQueueContext";
 import StoreHeader from "@/components/store-header";
 import { debounce } from "@/utils/debounce";
@@ -265,8 +266,14 @@ export default function TablesPage() {
   useEffect(() => { if (settingsOpen && tableMap) setTotalTablesDraft(String(tableMap.tables.length)); }, [settingsOpen, tableMap?.tables.length]);
   useEffect(() => {
     if (!tableSheetOpen || !isAdmin) return;
-    tableBillingService.getCustomers().then((result) => setCustomers(result.items)).catch(() => setCustomers([]));
-  }, [tableSheetOpen, isAdmin]);
+    const key = `billiard:customers:${storeId}:v1`;
+    const cached = readSessionCache<TableBillCustomer[]>(key, 5 * 60 * 1000);
+    if (cached) setCustomers(cached);
+    tableBillingService.getCustomers().then((result) => {
+      writeSessionCache(key, result.items);
+      setCustomers(result.items);
+    }).catch(() => { if (!cached) setCustomers([]); });
+  }, [tableSheetOpen, isAdmin, storeId]);
 
   const positions = useMemo(() => resolvedPositions(tableMap?.tables || [], storedPositions), [tableMap?.tables, storedPositions]);
   const activePositions = editingLayout ? draftPositions : positions;

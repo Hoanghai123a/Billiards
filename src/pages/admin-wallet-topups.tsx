@@ -39,7 +39,7 @@ export default function AdminWalletTopupsPage() {
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void load(true);
     };
-    const timer = window.setInterval(refreshWhenVisible, 5000);
+    const timer = window.setInterval(refreshWhenVisible, 60000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearInterval(timer);

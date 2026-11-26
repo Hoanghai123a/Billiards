@@ -8,12 +8,15 @@ import type { WalletSummary, WalletTransaction, WalletTopup, WalletTopupPayment 
 import type { WalletSpinItem, WalletSpinPrize } from "@/api/services";
 import { formatVietnamDate, formatVietnamDateTime, vietnamDateBounds } from "@/utils/format";
 import { normalizeTransferContent } from "@/utils/transfer";
+import { readSessionCache, removeSessionCache, writeSessionCache } from "@/utils/session-cache";
+import PinnedPageHeader from "@/components/pinned-page-header";
 
 type BankApp = { appId: string; appName: string; appLogo?: string; autofill?: number };
 type TopupResume = { topup: WalletTopup; payment: WalletTopupPayment };
 
 const money = (value: number) => `${value.toLocaleString("vi-VN")}đ`;
 const TOPUP_RESUME_KEY = "wallet-topup-resume";
+const BANK_APP_KEY = "wallet-topup-bank-app";
 const formatAmountInput = (value: string) => {
   const digits = value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
   return digits ? Number(digits).toLocaleString("vi-VN") : "";
@@ -125,18 +128,22 @@ export default function WalletPage() {
   useEffect(() => {
     if (!topupOpen || topup?.status !== "paid") return;
     confirmedTransfer.current = true;
-    window.localStorage.removeItem(TOPUP_RESUME_KEY);
+    removeSessionCache(TOPUP_RESUME_KEY);
     setTopupOpen(false);
     openSnackbar({ text: `Nạp tiền thành công. Ví đã được cộng ${money(topup.amount)}.`, type: "success", position: "top" });
   }, [openSnackbar, topup?.amount, topup?.status, topupOpen]);
 
   useEffect(() => {
     if (loading) return;
+    try {
+      window.localStorage.removeItem(TOPUP_RESUME_KEY);
+      window.localStorage.removeItem(BANK_APP_KEY);
+    } catch {}
     const topupId = searchParams.get("topupId");
     if (topupId) {
       try {
-        const saved = JSON.parse(window.localStorage.getItem(TOPUP_RESUME_KEY) || "") as TopupResume;
-        if (saved.topup.id === topupId) {
+        const saved = readSessionCache<TopupResume>(TOPUP_RESUME_KEY, 15 * 60 * 1000);
+        if (saved?.topup.id === topupId) {
           confirmedTransfer.current = false;
           setTopup(saved.topup);
           setTopupPayment(saved.payment);
@@ -218,7 +225,7 @@ export default function WalletPage() {
   const closeTopup = async () => {
     if (topupBusy) return;
     setTopupOpen(false);
-    window.localStorage.removeItem(TOPUP_RESUME_KEY);
+    removeSessionCache(TOPUP_RESUME_KEY);
     if (!topup || confirmedTransfer.current || topup.status !== "pending") return;
     setTopupBusy(true);
     try {
@@ -235,7 +242,7 @@ export default function WalletPage() {
 
   const confirmTransfer = () => {
     confirmedTransfer.current = true;
-    window.localStorage.removeItem(TOPUP_RESUME_KEY);
+    removeSessionCache(TOPUP_RESUME_KEY);
     setTopupOpen(false);
     openSnackbar({ text: "Đã ghi nhận. Ví sẽ được cộng tự động khi ngân hàng xác nhận giao dịch.", type: "success", position: "top" });
   };
@@ -253,9 +260,10 @@ export default function WalletPage() {
   };
 
   const openBankTransfer = async () => {
-    const savedAppId = window.localStorage.getItem("wallet-topup-bank-app");
+    try { window.localStorage.removeItem(BANK_APP_KEY); } catch {}
+    const savedAppId = readSessionCache<string>(BANK_APP_KEY, 30 * 24 * 60 * 60 * 1000);
     if (savedAppId) {
-      window.localStorage.setItem(TOPUP_RESUME_KEY, JSON.stringify({ topup, payment: topupPayment }));
+      writeSessionCache(TOPUP_RESUME_KEY, { topup, payment: topupPayment });
       window.location.assign(transferUrl(savedAppId));
       return;
     }
@@ -278,8 +286,8 @@ export default function WalletPage() {
   };
 
   const selectBankApp = (appId: string) => {
-    window.localStorage.setItem("wallet-topup-bank-app", appId);
-    window.localStorage.setItem(TOPUP_RESUME_KEY, JSON.stringify({ topup, payment: topupPayment }));
+    writeSessionCache(BANK_APP_KEY, appId);
+    writeSessionCache(TOPUP_RESUME_KEY, { topup, payment: topupPayment });
     setBankPickerOpen(false);
     window.location.assign(transferUrl(appId));
   };
@@ -296,11 +304,11 @@ export default function WalletPage() {
   return (
     <Page className="min-h-screen bg-slate-50 pb-24 dark:bg-black">
       {activeSpin && <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/60 px-4"><section className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 text-center shadow-xl"><Text.Title size="small">Bạn được mời quay số</Text.Title><Text size="small" className="block text-slate-600">Admin đã bật một lượt quay cho bạn.</Text><div className="grid grid-cols-2 gap-2">{spinData.prizes.slice(0, 6).map((prize, index) => <div key={`${prize.name}-${index}`} className="rounded-lg border border-amber-100 bg-amber-50 px-2 py-2 text-xs"><strong className="block truncate">{prize.name}</strong><span>{money(prize.amount)}</span></div>)}</div><button type="button" disabled={spinningSession} onClick={() => void spinAdminSession()} className="min-h-12 w-full rounded-xl bg-amber-500 text-sm font-semibold text-white disabled:opacity-60">{spinningSession ? "Đang quay..." : "Quay ngay"}</button></section></div>}
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
+      <PinnedPageHeader className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
         <button type="button" aria-label="Quay lại" onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 dark:bg-white/10"><Icon icon="zi-arrow-left" /></button>
         <Text.Title size="small" className="flex-1">Ví tài khoản</Text.Title>
         <button type="button" onClick={openTopup} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Nạp tiền</button>
-      </header>
+      </PinnedPageHeader>
       <main className="space-y-4 px-4 py-4">
         {error && <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         <section className="grid grid-cols-2 gap-3">

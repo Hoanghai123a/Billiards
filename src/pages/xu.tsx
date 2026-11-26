@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { xuService } from "@/api/services";
 import type { XuRedemption, XuReferralSummary, XuReward, XuSummary, XuTransaction } from "@/api/pocketbase";
 import { formatVietnamDateTime } from "@/utils/format";
+import PinnedPageHeader from "@/components/pinned-page-header";
 
 const xu = (value: number) => `${value.toLocaleString("vi-VN")} Xu`;
 const dateTime = (value: string) => formatVietnamDateTime(value, { dateStyle: "short", timeStyle: "short" });
@@ -107,10 +108,10 @@ export default function XuPage() {
 
   return (
     <Page className="min-h-screen bg-slate-50 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] dark:bg-black">
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
+      <PinnedPageHeader className="flex items-center gap-3 border-b bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
         <button aria-label="Quay lại tài khoản" onClick={() => navigate("/account")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-white/10"><Icon icon="zi-arrow-left" /></button>
         <Text.Title size="small">Xu thưởng</Text.Title>
-      </header>
+      </PinnedPageHeader>
 
       <main className="space-y-5 px-4 py-4">
         <section className="rounded-lg bg-white p-4 shadow-sm dark:bg-zinc-900">

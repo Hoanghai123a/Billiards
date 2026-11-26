@@ -8,6 +8,7 @@ import pb, { type Product, type ProductCategory, type ProductInput, type Product
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDuration, formatMoneyInput, handleMoneyInput } from "@/utils/format";
 import AdminNav from "@/components/admin-nav";
+import PinnedPageHeader from "@/components/pinned-page-header";
 
 type DurationForm = { days: string; hours: string; minutes: string };
 type ProductForm = {
@@ -479,12 +480,12 @@ export default function AdminProductsPage() {
   };
 
   return <Page className="min-h-screen bg-slate-50 pb-[calc(env(safe-area-inset-bottom,0px)+88px)]">
-    <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-slate-200 bg-white px-3 pb-3 pt-12 sm:gap-3 sm:px-4">
+    <PinnedPageHeader className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 pb-3 pt-12 sm:gap-3 sm:px-4">
       <button aria-label="Quay lại sơ đồ bàn" title="Quay lại" onClick={() => navigate("/")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon icon="zi-arrow-left" /></button>
       <Text.Title size="small" className="min-w-0 flex-1">Mặt hàng</Text.Title>
       <button onClick={() => setCategorySheetOpen(true)} className="flex min-h-10 shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 sm:gap-2 sm:px-3 sm:text-sm"><Icon icon="zi-list-1" />Danh mục</button>
       <button aria-label="Thêm mặt hàng" title="Thêm mặt hàng" onClick={openNew} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-white"><Icon icon="zi-plus" /></button>
-    </header>
+    </PinnedPageHeader>
     <AdminNav />
 
     <main className="mx-auto max-w-3xl space-y-3 px-4 py-4">

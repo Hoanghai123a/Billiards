@@ -39,7 +39,7 @@ function AccountPage() {
       if (document.visibilityState === "visible") void refreshWallet();
     };
     void refreshWallet();
-    const timer = window.setInterval(refreshWhenVisible, 5000);
+    const timer = window.setInterval(refreshWhenVisible, 60000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       active = false;
@@ -67,7 +67,7 @@ function AccountPage() {
     let active = true;
     const loadNotifications = () => adminNotificationService.list().then((result) => { if (active) setNotifications(result.items); }).catch(() => {});
     loadNotifications();
-    const timer = window.setInterval(loadNotifications, 15000);
+    const timer = window.setInterval(loadNotifications, 60000);
     return () => { active = false; window.clearInterval(timer); };
   }, [isAuthenticated, user?.role]);
 

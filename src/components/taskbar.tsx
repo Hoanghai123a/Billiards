@@ -91,6 +91,12 @@ const TabBar = () => {
   }, [location.pathname, tabs]);
 
   const [isStretching, setIsStretching] = useState(false);
+  const isTabBarHidden = location.pathname === "/cart" || location.pathname === "/login" || location.pathname === "/public-tables" || location.pathname.startsWith("/public-tables/");
+
+  useEffect(() => {
+    document.body.classList.toggle("has-bottom-tabbar", !isTabBarHidden);
+    return () => document.body.classList.remove("has-bottom-tabbar");
+  }, [isTabBarHidden]);
 
   useEffect(() => {
     setIsStretching(true);
@@ -103,7 +109,7 @@ const TabBar = () => {
     navigate(path);
   };
 
-  if (location.pathname === "/cart" || location.pathname === "/login" || location.pathname === "/public-tables" || location.pathname.startsWith("/public-tables/")) return null;
+  if (isTabBarHidden) return null;
 
   const slotWidth = 100 / tabs.length;
   const pillWidth = isStretching ? PILL_STRETCH_WIDTH : PILL_REST_WIDTH;

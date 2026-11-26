@@ -88,6 +88,7 @@ export default function AdminReportsPage() {
   const [accountId, setAccountId] = useState("");
   const [category, setCategory] = useState("");
   const [report, setReport] = useState<TableBillingReport | null>(null);
+  const loadedReportQueryRef = useRef("");
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
   const [expandedLists, setExpandedLists] = useState({ products: false, inventory: false, tables: false });
@@ -178,6 +179,7 @@ export default function AdminReportsPage() {
     if (nextPage === 1) setLoading(true); else setLoadingMore(true);
     try {
       const result = await tableBillHistoryService.report({ from: fromVietnamDateTimeInput(from), to: fromVietnamDateTimeInput(to), tableName: tableName.trim(), productName: productName.trim(), paymentMethod, accountId, category, page: nextPage });
+      if (nextPage === 1) loadedReportQueryRef.current = [from, to, tableName.trim(), productName.trim(), paymentMethod, accountId, category].join("\u0001");
       setReport((current) => nextPage === 1 || !current ? result : { ...result, payments: [...current.payments, ...result.payments] });
     } catch (error) {
       openSnackbar({ text: messageOf(error), type: "error", position: "top" });
@@ -191,7 +193,10 @@ export default function AdminReportsPage() {
     try {
       if (from > to) throw new Error("Thời điểm bắt đầu không được sau thời điểm kết thúc");
       if (Date.parse(to) - Date.parse(from) > MAX_REPORT_RANGE_MS) throw new Error("Chỉ được lọc tối đa 32 ngày");
-      let result = await tableBillHistoryService.report({ from: fromVietnamDateTimeInput(from), to: fromVietnamDateTimeInput(to), tableName: tableName.trim(), productName: productName.trim(), paymentMethod, accountId, category, page: 1, pageSize: 5000 });
+      const queryKey = [from, to, tableName.trim(), productName.trim(), paymentMethod, accountId, category].join("\u0001");
+      let result = report && !report.hasMore && loadedReportQueryRef.current === queryKey
+        ? report
+        : await tableBillHistoryService.report({ from: fromVietnamDateTimeInput(from), to: fromVietnamDateTimeInput(to), tableName: tableName.trim(), productName: productName.trim(), paymentMethod, accountId, category, page: 1, pageSize: 5000 });
       const payments = [...result.payments];
       while (result.hasMore) {
         result = await tableBillHistoryService.report({ from: fromVietnamDateTimeInput(from), to: fromVietnamDateTimeInput(to), tableName: tableName.trim(), productName: productName.trim(), paymentMethod, accountId, category, page: result.page + 1, pageSize: 5000 });

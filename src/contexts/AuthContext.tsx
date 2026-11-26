@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { getTokenPayload } from 'pocketbase';
 import pb from '@/api/pocketbase';
 import type { User } from '@/api/pocketbase';
-import { readSessionCache, writeSessionCache } from '@/utils/session-cache';
+import { clearLocalStoragePrefix, clearSessionCachePrefix, readSessionCache, removeSessionCache, writeSessionCache } from '@/utils/session-cache';
 import { isValidUsername, normalizeUsername } from '@/utils/username';
 
 const STORES_CACHE_KEY = 'billiard:stores:v1';
@@ -217,6 +217,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     pb.authStore.clear();
+    clearSessionCachePrefix('billiard:payment-settings:');
+    clearLocalStoragePrefix('billiard:payment-settings:');
+    removeSessionCache('wallet-topup-resume');
     setUser(null);
     setError(null);
   };

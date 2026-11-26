@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { openBillPrint } from "@/components/bill-print";
 import { formatDuration, formatMoneyInput, formatVietnamDateTime, fromVietnamDateTimeInput, handleMoneyInput, roundBillQrAmount, toVietnamDateTimeInput } from "@/utils/format";
 import { readSessionCache, writeSessionCache } from "@/utils/session-cache";
+import PinnedPageHeader from "@/components/pinned-page-header";
 
 const money = (value: number) => `${Math.round(Number(value || 0)).toLocaleString("vi-VN")}đ`;
 const quantityText = (value: number, unit: TableBill["items"][number]["billingUnit"]) => unit === "quantity" ? String(Math.round(value)) : Number(value).toLocaleString("vi-VN", { maximumFractionDigits: 2 });
@@ -218,7 +219,7 @@ export default function PlayingPage() {
   const paymentDiscountValid = !paymentDiscountEnabled || (paymentDiscountInput !== "" && Number.isSafeInteger(paymentDiscountPercentValue) && paymentDiscountPercentValue >= 0 && paymentDiscountPercentValue <= 100);
   const appliedPaymentDiscountPercent = isAdmin && paymentDiscountEnabled && paymentDiscountValid ? paymentDiscountPercentValue : 0;
   const paymentDiscountAmount = bill && appliedPaymentDiscountPercent > 0 ? Math.round(payableAmount * appliedPaymentDiscountPercent / 100) : 0;
-  const paymentDueAmount = Math.max(0, payableAmount - paymentDiscountAmount);
+  const paymentDueAmount = roundBillQrAmount(Math.max(0, payableAmount - paymentDiscountAmount));
   const cashReceivedValue = cashReceivedInput === "" ? paymentDueAmount : Number(cashReceivedInput);
   const cashReceivedValid = cashReceivedInput === "" || Number.isSafeInteger(cashReceivedValue);
   const cashCanConfirm = Boolean(canOperateBill && bill && paymentDiscountValid && cashReceivedValid && cashReceivedValue >= paymentDueAmount);
@@ -658,7 +659,7 @@ export default function PlayingPage() {
 
   if (loading) return <Page className="min-h-screen bg-slate-50"><div className="flex justify-center py-16"><Spinner /></div></Page>;
   if (orderId) return <Page className="min-h-screen bg-slate-50 pb-[calc(env(safe-area-inset-bottom,0px)+88px)]">
-    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-12"><button aria-label="Quay lại" title="Quay lại" onClick={() => navigate(-1)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon icon="zi-arrow-left" /></button><Text.Title size="small" className="flex-1">Thanh toán hóa đơn</Text.Title></header>
+    <PinnedPageHeader className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-12"><button aria-label="Quay lại" title="Quay lại" onClick={() => navigate(-1)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Icon icon="zi-arrow-left" /></button><Text.Title size="small" className="flex-1">Thanh toán hóa đơn</Text.Title></PinnedPageHeader>
     <main className="mx-auto max-w-lg space-y-4 px-4 py-5">
       {legacyOrderError ? <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{legacyOrderError}<button onClick={loadLegacyOrder} className="mt-3 block font-semibold underline">Thử lại</button></div> : legacyOrder && <>
         <section className="space-y-3 border-b border-slate-200 pb-4"><Text size="small" className="text-slate-500">Mã hóa đơn</Text><Text className="break-all font-semibold text-slate-900">{legacyOrder.id}</Text>{legacyOrder.table && <Text size="small" className="text-slate-600">Bàn: {legacyOrder.table}</Text>}</section>

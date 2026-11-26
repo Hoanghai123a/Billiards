@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { xuService } from "@/api/services";
 import type { XuAdminUser, XuRedemption, XuReward, XuSettings } from "@/api/pocketbase";
 import { formatVietnamDateTime } from "@/utils/format";
+import PinnedPageHeader from "@/components/pinned-page-header";
 
 type AdminTab = "settings" | "users" | "rewards" | "redemptions";
 const xu = (value: number) => `${value.toLocaleString("vi-VN")} Xu`;
@@ -178,13 +179,15 @@ export default function AdminXuPage() {
 
   return (
     <Page className="min-h-screen bg-slate-50 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] dark:bg-black">
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
+      <PinnedPageHeader className="flex items-center gap-3 border-b bg-white px-4 pb-3 pt-12 dark:border-white/10 dark:bg-black">
         <button aria-label="Quay lại tài khoản" onClick={() => navigate("/account")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-white/10"><Icon icon="zi-arrow-left" /></button>
         <Text.Title size="small">Quản lý Xu</Text.Title>
-      </header>
-      <nav className="sticky top-[92px] z-[9] grid grid-cols-4 border-b bg-white dark:border-white/10 dark:bg-black">
+      </PinnedPageHeader>
+      <div className="h-11 shrink-0">
+        <nav className="fixed inset-x-0 top-[92px] z-[29] grid grid-cols-4 border-b bg-white dark:border-white/10 dark:bg-black">
         {tabs.map((item) => <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`min-h-11 border-b-2 px-1 text-xs font-semibold ${tab === item.key ? "border-green-600 text-green-700" : "border-transparent text-slate-500"}`}>{item.label}</button>)}
-      </nav>
+        </nav>
+      </div>
 
       <main className="space-y-4 px-4 py-4">
         {tab === "settings" && settings && <section className="space-y-4 rounded-lg bg-white p-4 shadow-sm dark:bg-zinc-900">
