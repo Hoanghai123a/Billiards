@@ -43,11 +43,6 @@ onRecordAfterDeleteSuccess((e) => {
   return e.next();
 }, "table_bill_items");
 
-const roundPaymentAmount = (value) => {
-  const amount = Math.max(0, Math.round(Number(value) || 0));
-  return amount >= 1000 ? Math.floor(amount / 1000) * 1000 : amount;
-};
-
 routerAdd("GET", "/api/admin/notifications", (c) => {
   const info = c.requestInfo();
   const auth = info.auth || c.auth;
@@ -753,8 +748,10 @@ routerAdd("GET", "/api/table-billing/map", (c) => {
   } catch (e) {}
   let rowCount = 2;
   let counts = [3, 3];
+  let sortOrder = "row";
   if (layout) {
     rowCount = Number(layout.get("row_count")) || 1;
+    sortOrder = String(layout.get("sort_order") || "row");
     try {
       counts = JSON.parse(String(layout.get("tables_per_row") || "[]"));
     } catch (e) {
@@ -799,7 +796,7 @@ routerAdd("GET", "/api/table-billing/map", (c) => {
       visibleSessions[String(bill.get("session_id") || bill.id)],
   );
   return c.json(200, {
-    layout: { rowCount, tablesPerRow: counts },
+    layout: { rowCount, tablesPerRow: counts, sortOrder },
     tables: tables.map((table, index) => ({
       ...table.publicExport(),
       name: String(table.get("name") || "Bàn " + (index + 1)),
@@ -912,6 +909,10 @@ routerAdd("GET", "/api/table-billing/customers", (c) => {
 });
 
 routerAdd("POST", "/api/table-billing/action", (c) => {
+  const roundPaymentAmount = (value) => {
+    const amount = Math.max(0, Math.round(Number(value) || 0));
+    return amount >= 1000 ? Math.floor(amount / 1000) * 1000 : amount;
+  };
   const publishStaffQueue = (app, store, actorId = "", eventType = "queue") => {
     try {
       require(`${__hooks}/staff_queue.js`).signalStaffQueue(
@@ -2585,6 +2586,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
     requireAdmin();
     const rowCount = Number(input.rowCount);
     const counts = input.tablesPerRow;
+    const sortOrder = String(input.sortOrder || "row");
     if (
       !Number.isInteger(rowCount) ||
       rowCount < 1 ||
@@ -2593,6 +2595,8 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
       counts.length !== rowCount
     )
       throw new BadRequestError("Số hàng hoặc số bàn mỗi hàng không hợp lệ");
+    if (!["row", "column"].includes(sortOrder))
+      throw new BadRequestError("Thứ tự hiển thị bàn không hợp lệ");
     let totalRequested = 0;
     for (const count of counts) {
       if (
@@ -2613,30 +2617,56 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
         0,
         { store },
       );
-      const positions = {};
-      for (const table of allTables)
-        positions[
-          String(table.get("row_number")) + ":" + String(table.get("position"))
-        ] = true;
+      if (totalRequested < allTables.length)
+        throw new BadRequestError("Không thể tự động xóa bàn. Hãy xóa từng bàn không còn sử dụng trước");
+      const occupied = {};
+      for (const table of allTables) occupied[String(table.get("row_number")) + ":" + String(table.get("position"))] = table;
       const tableCollection = txApp.findCollectionByNameOrId("tables");
+      const nextFreeCoordinate = () => {
+        for (let row = 20; row >= 1; row--)
+          for (let position = 100; position >= 1; position--) {
+            const key = row + ":" + position;
+            if (!occupied[key]) return { row, position, key };
+          }
+        throw new BadRequestError("Không còn vị trí trống để sắp xếp bàn");
+      };
+      while (allTables.length < totalRequested) {
+        const free = nextFreeCoordinate();
+        const table = new Record(tableCollection);
+        table.set("store", store);
+        table.set("name", "Bàn " + (allTables.length + 1));
+        table.set("status", "available");
+        table.set("table_type", "billiards");
+        table.set("row_number", free.row);
+        table.set("position", free.position);
+        txApp.save(table);
+        allTables.push(table);
+        occupied[free.key] = table;
+      }
+      const targets = [];
       for (let row = 1; row <= rowCount; row++) {
-        for (
-          let position = 1;
-          position <= Number(counts[row - 1]);
-          position++
-        ) {
-          const key = row + ":" + position;
-          if (positions[key]) continue;
-          const table = new Record(tableCollection);
-          table.set("store", store);
-          table.set("name", "Bàn " + (allTables.length + 1));
-          table.set("status", "available");
-          table.set("table_type", "billiards");
-          table.set("row_number", row);
-          table.set("position", position);
-          txApp.save(table);
-          allTables.push(table);
+        for (let position = 1; position <= Number(counts[row - 1]); position++) targets.push({ row, position });
+      }
+      for (let index = 0; index < allTables.length; index++) {
+        const table = allTables[index];
+        const target = targets[index];
+        const currentKey = String(table.get("row_number")) + ":" + String(table.get("position"));
+        const targetKey = target.row + ":" + target.position;
+        if (currentKey === targetKey) continue;
+        const blocker = occupied[targetKey];
+        if (blocker && blocker.id !== table.id) {
+          const free = nextFreeCoordinate();
+          blocker.set("row_number", free.row);
+          blocker.set("position", free.position);
+          txApp.save(blocker);
+          delete occupied[targetKey];
+          occupied[free.key] = blocker;
         }
+        table.set("row_number", target.row);
+        table.set("position", target.position);
+        txApp.save(table);
+        delete occupied[currentKey];
+        occupied[targetKey] = table;
       }
       renumberStoreTables(txApp);
       let layout;
@@ -2652,6 +2682,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
       }
       layout.set("row_count", rowCount);
       layout.set("tables_per_row", JSON.stringify(counts.map(Number)));
+      layout.set("sort_order", sortOrder);
       txApp.save(layout);
     });
     return c.json(200, { ok: true });

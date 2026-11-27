@@ -126,6 +126,7 @@ export interface Table {
 export interface TableLayout {
   rowCount: number;
   tablesPerRow: number[];
+  sortOrder: 'row' | 'column';
 }
 
 export interface TableCanvasPosition {

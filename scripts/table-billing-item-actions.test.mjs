@@ -91,6 +91,14 @@ function fixture(role = 'staff', { bill = {}, item = {}, extraItems = [], histor
     onRecordAfterUpdateSuccess(handler) { hooks.set('update', handler); },
     onRecordAfterDeleteSuccess(handler) { hooks.set('delete', handler); },
   });
+  const actionRoute = routes.get('POST /api/table-billing/action');
+  routes.set('POST /api/table-billing/action', vm.runInNewContext(`(${actionRoute.toString()})`, {
+    $app: app, Record, console,
+    __hooks: '/pb_hooks', require: hookGlobals.require,
+    BadRequestError: class BadRequestError extends Error {},
+    ForbiddenError: class ForbiddenError extends Error {},
+    UnauthorizedError: class UnauthorizedError extends Error {},
+  }));
   return {
     records: () => records,
     act(action, input = {}, requestAuth = auth) {
@@ -401,7 +409,7 @@ test('staff approves every item in one order request atomically', () => {
   const state = fixture('staff', { item: { queue_status: 'approval_pending' }, extraItems: [{ id: 'item2', queue_status: 'approval_pending' }] });
   const result = state.act('request_approve', { itemIds: ['item1', 'item2'] });
   assert.equal(result.status, 200);
-  assert.deepEqual(state.records().filter((row) => row.collection === 'table_bill_items').map((row) => row.get('queue_status')), ['pending', 'pending']);
+  assert.deepEqual(state.records().filter((row) => row.collection === 'table_bill_items').map((row) => row.get('queue_status')), ['done', 'done']);
   assert.equal(events(state).length, 2);
 });
 

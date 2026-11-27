@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Avatar, Icon, Page, Spinner, Text, useSnackbar } from "zmp-ui";
+import { Icon, Page, Spinner, Text, useSnackbar } from "zmp-ui";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { adminNotificationService, billPaymentService, walletService } from "@/api/services";
 import type { AdminNotification, BillPaymentSettings, WalletSummary } from "@/api/pocketbase";
 import { readSessionCache, writeSessionCache } from "@/utils/session-cache";
+import logo from "@/images/logo.jpg";
 
 type VietQrBank = { code: string; bin: string; name: string; shortName: string; isTransfer: number };
 const VIETQR_BANKS_CACHE_KEY = "billiard:vietqr-banks:v1";
@@ -145,46 +146,46 @@ function AccountPage() {
 
   return (
     <Page className={PAGE_CLASS}>
-      <div className="flex items-start gap-3 px-4 py-4 pt-12 border-b border-black/5 dark:border-white/10">
-        <Avatar size={64}>
-          {user.username.charAt(0).toUpperCase()}
-        </Avatar>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Text.Title size="small" className="truncate">
-            {user.fullname || user.username}
-          </Text.Title>
-          {user.email && (
-            <Text
-              size="xSmall"
-              className="truncate text-[#767a7f] dark:text-[#8f9499]"
-            >
-              {user.email}
-            </Text>
-          )}
-          <div className="mt-1 flex flex-wrap gap-2">
-            {user.role === "admin" && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#e8ba02]/15 px-2 py-1 text-[11px] font-semibold text-[#8a6d00] dark:bg-[#e8ba02]/20 dark:text-[#e8ba02]">
-                <Icon icon="zi-star-solid" size={12} />
-                Admin
-              </span>
+      <div className="h-[116px] shrink-0">
+        <header className="h2-glass-surface fixed inset-x-0 top-0 z-30 flex items-center gap-3 rounded-b-2xl border-b border-orange-100 px-4 pb-3 pt-11">
+          <img src={logo} alt="Logo H2 Billiards" className="h-12 w-12 shrink-0 rounded-lg shadow-md" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <Text.Title size="small" className="truncate text-slate-900">
+              {user.fullname || user.username}
+            </Text.Title>
+            {user.email && (
+              <Text
+                size="xSmall"
+                className="truncate text-slate-600"
+              >
+                {user.email}
+              </Text>
             )}
-            {user.verified && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-1 text-[11px] font-semibold text-green-700 dark:bg-green-500/20 dark:text-green-400">
-                <Icon icon="zi-check-circle-solid" size={12} />
-                Đã xác thực
-              </span>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {user.role === "admin" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#e8ba02]/15 px-2 py-1 text-[11px] font-semibold text-[#8a6d00]">
+                  <Icon icon="zi-star-solid" size={12} />
+                  Admin
+                </span>
+              )}
+              {user.verified && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-1 text-[11px] font-semibold text-green-700">
+                  <Icon icon="zi-check-circle-solid" size={12} />
+                  Đã xác thực
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleLogout}
-          aria-label="Đăng xuất"
-          className="flex shrink-0 items-center gap-1 py-1 text-red-500"
-        >
-          <Icon icon="zi-leave" />
-          <Text size="xSmall">Đăng xuất</Text>
-        </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Đăng xuất"
+            className="flex shrink-0 items-center gap-1 py-1 text-red-500"
+          >
+            <Icon icon="zi-leave" />
+            <Text size="xSmall">Đăng xuất</Text>
+          </button>
+        </header>
       </div>
 
       <div className="flex-1">
