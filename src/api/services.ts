@@ -340,11 +340,13 @@ export const tableBillingService = {
   },
   async getProducts() {
     const key = cacheKey('billiard:products');
-    const cached = readSessionCache<{ items: TableBillProduct[] }>(key, 5 * 60 * 1000);
-    if (cached) return cached;
-    const result = await pb.send<{ items: TableBillProduct[] }>('/api/table-billing/products', { method: 'GET' });
-    writeSessionCache(key, result);
-    return result;
+    const cached = readSessionCache<{ items?: unknown }>(key, 5 * 60 * 1000);
+    if (cached && Array.isArray(cached.items)) return { items: cached.items as TableBillProduct[] };
+    const result = await pb.send<{ items?: unknown }>('/api/table-billing/products', { method: 'GET' });
+    if (!Array.isArray(result?.items)) throw new Error('API danh sách sản phẩm trả dữ liệu không hợp lệ');
+    const products = { items: result.items as TableBillProduct[] };
+    writeSessionCache(key, products);
+    return products;
   },
   async getCustomers() {
     const key = cacheKey('billiard:customers');

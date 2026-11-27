@@ -146,8 +146,7 @@ function AccountPage() {
 
   return (
     <Page className={PAGE_CLASS}>
-      <div className="h-[116px] shrink-0">
-        <header className="h2-glass-surface fixed inset-x-0 top-0 z-30 flex items-center gap-3 rounded-b-2xl border-b border-orange-100 px-4 pb-3 pt-11">
+      <header className="h2-glass-surface sticky top-0 z-30 flex shrink-0 items-center gap-3 rounded-b-2xl border-b border-orange-100 px-4 pb-3 pt-11">
           <img src={logo} alt="Logo H2 Billiards" className="h-12 w-12 shrink-0 rounded-lg shadow-md" />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <Text.Title size="small" className="truncate text-slate-900">
@@ -185,8 +184,7 @@ function AccountPage() {
             <Icon icon="zi-leave" />
             <Text size="xSmall">Đăng xuất</Text>
           </button>
-        </header>
-      </div>
+      </header>
 
       <div className="flex-1">
         <div className="px-4 py-4">

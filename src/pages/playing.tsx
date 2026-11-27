@@ -149,7 +149,8 @@ export default function PlayingPage() {
     if (activeTab !== "menu" || !user?.store) return;
     let active = true;
     const cacheKey = `billiard:products:${user.store}:v1`;
-    const cachedProducts = readSessionCache<TableBillProduct[]>(cacheKey, 5 * 60 * 1000);
+    const cachedValue = readSessionCache<unknown>(cacheKey, 5 * 60 * 1000);
+    const cachedProducts = Array.isArray(cachedValue) ? cachedValue as TableBillProduct[] : null;
     if (cachedProducts) setProducts(cachedProducts);
     setProductsLoading(!cachedProducts);
     tableBillingService.getProducts().then((result) => {
@@ -157,7 +158,7 @@ export default function PlayingPage() {
       writeSessionCache(cacheKey, result.items);
       setProducts(result.items);
     }).catch((error) => {
-      if (active && !cachedProducts) openSnackbar({ text: errorMessage(error), type: "error" });
+      if (active) openSnackbar({ text: errorMessage(error), type: "error" });
     }).finally(() => { if (active) setProductsLoading(false); });
     return () => { active = false; };
   }, [activeTab, user?.store]);
