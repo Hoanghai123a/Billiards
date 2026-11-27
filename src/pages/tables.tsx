@@ -42,7 +42,9 @@ function arrangeTables(tables: Table[], order: NumberingOrder) {
 function ElapsedClock({ startedAt, className = "" }: { startedAt: string; className?: string }) {
   const [, setTick] = useState(0);
   useEffect(() => {
-    const timer = window.setInterval(() => setTick((tick) => tick + 1), 1000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") setTick((tick) => tick + 1);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
   return <span className={className}>{formatElapsedClock(startedAt)}</span>;

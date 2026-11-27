@@ -44,6 +44,9 @@ test("routes are loaded on demand and bill detail does not reload the table map"
   const playing = read("src/pages/playing.tsx");
   assert.match(layout, /lazy\(\(\) => import\("@\/pages\/tables"\)\)/);
   assert.match(layout, /<Suspense fallback=/);
+  assert.match(layout, /class AppErrorBoundary/);
+  assert.match(layout, /Tải lại ứng dụng/);
+  assert.match(layout, /return <LoadingScreen \/>/);
   assert.doesNotMatch(layout, /import TablesPage from "@\/pages\/tables"/);
   assert.doesNotMatch(playing, /sequentialTableName/);
   assert.match(playing, /const result = await tableBillingService\.getDetail\(bill\.id\)/);
@@ -56,6 +59,7 @@ test("table map uses realtime refresh and only active clocks rerender each secon
   assert.match(tables, /collection\("admin_notifications"\)\.subscribe/);
   assert.match(tables, /setInterval\(refreshWhenVisible, 60000\)/);
   assert.match(tables, /function ElapsedClock/);
+  assert.match(tables, /document\.visibilityState === "visible"/);
   assert.doesNotMatch(tables, /setClockTick/);
   assert.match(notificationRules, /recipient = @request\.auth\.id && store = @request\.auth\.store/);
 });
@@ -66,11 +70,21 @@ test("safe reference data uses scoped session cache and still revalidates", () =
   const account = read("src/pages/account.tsx");
   const playing = read("src/pages/playing.tsx");
   assert.match(cache, /Date\.now\(\) - entry\.savedAt <= maxAgeMs/);
+  assert.match(cache, /sessionStorage\.getItem/);
   assert.match(auth, /billiard:stores:v1/);
   assert.match(account, /billiard:vietqr-banks:v1/);
   assert.match(playing, /billiard:products:\$\{user\.store\}:v1/);
   assert.match(playing, /tableBillingService\.getProducts\(\)\.then/);
-  assert.doesNotMatch(cache, /localStorage/);
+});
+
+test("public bill polling cannot overlap and malformed auth tokens are cleared", () => {
+  const publicBill = read("src/pages/public-bill.tsx");
+  const auth = read("src/contexts/AuthContext.tsx");
+  assert.match(publicBill, /load\(\)\.finally/);
+  assert.match(publicBill, /setTimeout\(refresh, 5000\)/);
+  assert.doesNotMatch(publicBill, /setInterval\([^\n]*5000/);
+  assert.match(auth, /getTokenPayload\(token\)\.exp/);
+  assert.match(auth, /catch \{\s*pb\.authStore\.clear\(\)/);
 });
 
 test("unused legacy menu components and their dependencies stay removed", () => {

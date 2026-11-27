@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { SnackbarProvider } from "zmp-ui";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
@@ -34,12 +34,43 @@ const AdminSettingsPage = lazy(() => import("@/pages/admin-settings"));
 const StaffQueuePage = lazy(() => import("@/pages/staff-queue"));
 const PublicBillPage = lazy(() => import("@/pages/public-bill"));
 
+function LoadingScreen() {
+  return <div role="status" className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-sm text-slate-600">Đang tải...</div>;
+}
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Ứng dụng gặp lỗi:", error, info);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <section role="alert" className="w-full max-w-sm rounded-lg border border-rose-200 bg-white p-5 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">Không thể hiển thị trang</h1>
+          <p className="mt-2 text-sm text-slate-600">Kết nối hoặc dữ liệu tải trang có thể đã bị gián đoạn.</p>
+          <button type="button" onClick={() => window.location.reload()} className="mt-4 min-h-11 w-full rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white">
+            Tải lại ứng dụng
+          </button>
+        </section>
+      </main>
+    );
+  }
+}
+
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
-    return null;
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -52,7 +83,7 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
 function AppRoutes() {
   return (
     <>
-      <Suspense fallback={<div role="status" className="flex min-h-screen items-center justify-center px-4 text-sm text-slate-600">Đang tải...</div>}>
+      <Suspense fallback={<LoadingScreen />}>
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/public-tables" element={<PublicBillPage />} />
@@ -125,15 +156,17 @@ function AppRoutes() {
 
 const Layout = () => {
   return (
-    <BrowserRouter>
-      <SnackbarProvider>
-        <AuthProvider>
-          <StaffQueueProvider>
-            <AppRoutes />
-          </StaffQueueProvider>
-        </AuthProvider>
-      </SnackbarProvider>
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <SnackbarProvider>
+          <AuthProvider>
+            <StaffQueueProvider>
+              <AppRoutes />
+            </StaffQueueProvider>
+          </AuthProvider>
+        </SnackbarProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 };
 export default Layout;

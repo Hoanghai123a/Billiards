@@ -88,10 +88,21 @@ export default function PublicBillPage() {
   }, [storeId]);
   useEffect(() => {
     if (!tableId) return;
+    let active = true;
+    let timer = 0;
+    const refresh = () => {
+      if (!active) return;
+      if (document.visibilityState !== "visible") {
+        timer = window.setTimeout(refresh, 5000);
+        return;
+      }
+      void load().finally(() => {
+        if (active) timer = window.setTimeout(refresh, 5000);
+      });
+    };
     setLoaded(false);
-    void load();
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 5000);
-    return () => window.clearInterval(timer);
+    refresh();
+    return () => { active = false; window.clearTimeout(timer); };
   }, [tableId]);
 
   const selectTable = async (nextTableId: string) => {

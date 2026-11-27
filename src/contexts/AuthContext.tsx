@@ -140,7 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     const token = pb.authStore.token;
-    const expiresAt = getTokenPayload(token).exp;
+    let expiresAt: unknown;
+    try {
+      expiresAt = getTokenPayload(token).exp;
+    } catch {
+      pb.authStore.clear();
+      return;
+    }
     if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) return;
 
     let timeout: number;
