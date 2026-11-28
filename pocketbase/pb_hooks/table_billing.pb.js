@@ -928,7 +928,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
   const input = info.body || {};
   const action = String(input.action || "");
   const needsPreparation = (product) => product && product.get("billing_unit") !== "hour" && product.get("requires_preparation") === true;
-  if (!auth && !["public_detail", "public_tables", "public_switch_table", "public_request_transfer", "public_order"].includes(action)) throw new UnauthorizedError("Cần đăng nhập");
+  if (!auth && !["public_detail", "public_tables", "public_switch_table", "public_request_transfer", "public_continue_playing", "public_order"].includes(action)) throw new UnauthorizedError("Cần đăng nhập");
   let store = auth ? String(auth.get("store") || "") : "";
   if (!auth && action === "public_order") {
     const tableId = String(input.tableId || "").trim();
@@ -1419,16 +1419,18 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
       app.save(notification);
     }
   };
-  const markBillNotificationsRead = (app, storeId, recipientId, billId) => {
+  const markBillNotificationsRead = (app, storeId, recipientId, billId, type) => {
     let notifications = [];
     try {
+      const recipientFilter = recipientId ? " && recipient = {:recipient}" : "";
+      const typeFilter = type ? " && type = {:type}" : "";
       notifications = app.findRecordsByFilter(
         "admin_notifications",
-        "store = {:store} && recipient = {:recipient} && reference_type = 'table_bill' && reference_id = {:bill}",
+        "store = {:store}" + recipientFilter + typeFilter + " && reference_type = 'table_bill' && reference_id = {:bill}",
         "created",
         -1,
         0,
-        { store: storeId, recipient: recipientId, bill: billId },
+        { store: storeId, recipient: recipientId, bill: billId, type },
       );
     } catch (e) {
       return;
@@ -2187,7 +2189,23 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
     else store = String($app.findRecordById("tables", tableId).get("store") || "");
     if (!store) throw new BadRequestError("Bàn không thuộc cửa hàng");
     $app.findRecordById("stores", store);
-    const tables = $app.findRecordsByFilter("tables", "store = {:store}", "name,created", -1, 0, { store });
+    let layout = null;
+    try {
+      layout = $app.findFirstRecordByFilter("table_layouts", "store = {:store}", { store });
+    } catch (e) {}
+    let rowCount = 2;
+    let counts = [3, 3];
+    if (layout) {
+      rowCount = Number(layout.get("row_count")) || 1;
+      try { counts = JSON.parse(String(layout.get("tables_per_row") || "[]")); } catch (e) { counts = []; }
+      if (!Array.isArray(counts)) counts = [];
+    }
+    const tables = $app.findRecordsByFilter("tables", "store = {:store}", "row_number,position,name", -1, 0, { store })
+      .filter((table) => {
+        const row = Number(table.get("row_number"));
+        const position = Number(table.get("position"));
+        return Number.isInteger(row) && row >= 1 && row <= rowCount && position >= 1 && position <= Number(counts[row - 1] || 0);
+      });
     return c.json(200, { ok: true, tables: tables.map((table) => ({ id: table.id, name: table.get("name") || "Bàn" })) });
   }
 
@@ -2424,7 +2442,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
   if (action === "payment_request_list") {
     requireBillOperator();
     const bills = $app.findRecordsByFilter("table_bills", "store = {:store} && status = 'wallet_pending' && payment_method = 'transfer'", "wallet_requested_at,created", -1, 0, { store });
-    return c.json(200, { items: bills.map((bill) => ({ id: bill.id, billId: bill.id, billStatus: bill.get("status"), tableName: displayTableName($app, bill.get("table")), name: "Khách báo đã chuyển khoản", quantity: 1, unitLabel: "", amount: Number(bill.get("requested_amount")) || Number(bill.get("total_amount")) || 0, queuedAt: bill.get("wallet_requested_at") || "", actorName: "Khách từ link bill" })) });
+    return c.json(200, { items: bills.map((bill) => ({ id: bill.id, billId: bill.id, billStatus: bill.get("status"), tableName: displayTableName($app, bill.get("table")), name: bill.get("payment_requester") ? "Khách báo đã chuyển khoản" : "Khách chọn thanh toán tài khoản", quantity: 1, unitLabel: "", amount: Number(bill.get("requested_amount")) || Number(bill.get("total_amount")) || 0, queuedAt: bill.get("wallet_requested_at") || "", actorName: "Khách từ link bill" })) });
   }
 
   if (action === "payment_request_unreceived") {
@@ -3752,6 +3770,37 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
     return c.json(200, response);
   }
 
+  if (action === "public_continue_playing") {
+    const table = $app.findRecordById("tables", String(input.tableId || ""));
+    const billId = String(input.billId || "");
+    store = String(table.get("store") || "");
+    const currentBills = $app.findRecordsByFilter("table_bills", "store = {:store} && table = {:table}", "-created", 1, 0, { store, table: table.id });
+    if (!currentBills[0] || currentBills[0].id !== billId) throw new BadRequestError("Bill đã thay đổi. Hãy tải lại trang.");
+    $app.runInTransaction((txApp) => {
+      const bill = txApp.findRecordById("table_bills", billId);
+      if (String(bill.get("store")) !== store || String(bill.get("table")) !== table.id) throw new ForbiddenError("Hóa đơn không hợp lệ");
+      if (bill.get("status") !== "wallet_pending" || bill.get("payment_method") !== "transfer") throw new BadRequestError("Bill không còn chờ thanh toán tài khoản");
+      bill.set("status", "open");
+      bill.set("stopped_at", "");
+      billItems(txApp, bill.id).forEach((item) => {
+        if (item.get("billing_unit") === "hour") {
+          item.set("stopped_at", "");
+          txApp.save(item);
+        }
+      });
+      bill.set("payment_method", "");
+      bill.set("wallet_requested_at", "");
+      bill.set("payment_requester", "");
+      bill.set("requested_amount", 0);
+      bill.set("payment_error", "");
+      txApp.save(bill);
+      recordEvent(txApp, { store, billId: bill.id, tableName: displayTableName(txApp, table.id), category: "payment", eventType: "payment_failed", title: "Khách tiếp tục chơi", actor: null, paymentMethod: "transfer", amount: Number(bill.get("total_amount")) || 0, details: { reason: "Khách chưa thanh toán và tiếp tục chơi" } });
+    });
+    markBillNotificationsRead($app, store, "", billId, "table_bill_transfer");
+    publishStaffQueue($app, store, "", "queue");
+    return c.json(200, { ok: true, bill: detail($app, $app.findRecordById("table_bills", billId)) });
+  }
+
   if (action === "request_transfer" || action === "public_request_transfer") {
     const publicRequest = action === "public_request_transfer";
     let bill;
@@ -3824,7 +3873,7 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
         tableName: displayTableName(txApp, txBill.get("table")),
         category: "payment",
         eventType: "payment_requested",
-        title: "Khách báo đã chuyển khoản",
+        title: publicRequest ? "Khách chọn thanh toán tài khoản" : "Khách báo đã chuyển khoản",
         actor: publicRequest ? null : auth,
         paymentMethod: "transfer",
         amount: total,
@@ -3834,8 +3883,8 @@ routerAdd("POST", "/api/table-billing/action", (c) => {
         txApp,
         billStore,
         "table_bill_transfer",
-        "Yêu cầu xác nhận chuyển khoản",
-        "Khách báo đã chuyển " +
+        publicRequest ? "Khách chọn thanh toán tài khoản" : "Yêu cầu xác nhận chuyển khoản",
+        (publicRequest ? "Khách chọn thanh toán tài khoản " : "Khách báo đã chuyển ") +
           String(total).replace(/\B(?=(\d{3})+(?!\d))/g, ".") +
           "đ cho " +
           displayTableName(txApp, txBill.get("table")),

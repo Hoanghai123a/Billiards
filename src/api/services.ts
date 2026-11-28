@@ -303,6 +303,9 @@ export const tableBillingService = {
   async requestPublicTransfer(tableId: string, billId: string) {
     return pb.send<{ ok: boolean; alreadyRequested: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'public_request_transfer', tableId, billId } });
   },
+  async continuePublicPlaying(tableId: string, billId: string) {
+    return pb.send<{ ok: boolean; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'public_continue_playing', tableId, billId } });
+  },
   async payPublicBillWithWallet(billId: string) {
     return pb.send<{ ok: boolean; alreadyPaid: boolean; promoUsed?: number; mainUsed?: number; error?: string; bill: TableBill }>('/api/table-billing/action', { method: 'POST', body: { action: 'public_wallet_payment', billId } });
   },
